@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Client</title>
+    <style>
+        body {
+            font-family: monospace;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        h1 {
+            color: #569cd6;
+        }
+        #status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .connected {
+            background: #2d5a2d;
+            color: #98c379;
+        }
+        .disconnected {
+            background: #5a2d2d;
+            color: #e06c75;
+        }
+        #messages {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #3c3c3c;
+            padding: 10px;
+            margin: 10px 0;
+            background: #252526;
+        }
+        .sent {
+            color: #dcdcaa;
+        }
+        .received {
+            color: #4ec9b0;
+        }
+        .system {
+            color: #808080;
+            font-style: italic;
+        }
+        #inputArea {
+            display: flex;
+            gap: 10px;
+        }
+        #messageInput {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #3c3c3c;
+            background: #3c3c3c;
+            color: #d4d4d4;
+            font-family: monospace;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            cursor: pointer;
+            font-family: monospace;
+        }
+        #sendBtn {
+            background: #0e639c;
+            color: white;
+        }
+        #sendBtn:disabled {
+            background: #3c3c3c;
+            cursor: not-allowed;
+        }
+        #connectBtn {
+            background: #2d5a2d;
+            color: white;
+        }
+        #disconnectBtn {
+            background: #5a2d2d;
+            color: white;
+        }
+        .controls {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Client</h1>
+
+    <div id="status" class="disconnected">Disconnected</div>
+
+    <div class="controls">
+        <button id="connectBtn" onclick="connect()">Connect</button>
+        <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+    </div>
+
+    <div id="messages"></div>
+
+    <div id="inputArea">
+        <input type="text" id="messageInput" placeholder="Type a message..." onkeypress="handleKeyPress(event)" disabled>
+        <button id="sendBtn" onclick="sendMessage()" disabled>Send</button>
+    </div>
+
+    <script>
+        let ws = null;
+        const serverUrl = 'ws://localhost:8082';
+
+        function connect() {
+            log('Connecting to ' + serverUrl + '...', 'system');
+
+            // Create WebSocket connection
+            // Browser handles:
+            // - TCP connection
+            // - HTTP Upgrade handshake
+            // - Frame encoding/decoding
+            // - Masking (client -> server)
+            ws = new WebSocket(serverUrl);
+
+            // Connection opened
+            ws.onopen = function(event) {
+                log('Connected!', 'system');
+                updateStatus(true);
+            };
+
+            // Message received
+            ws.onmessage = function(event) {
+                log('< ' + event.data, 'received');
+            };
+
+            // Connection closed
+            ws.onclose = function(event) {
+                log('Disconnected (code: ' + event.code + ')', 'system');
+                updateStatus(false);
+                ws = null;
+            };
+
+            // Error occurred
+            ws.onerror = function(error) {
+                log('Error occurred', 'system');
+            };
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+            }
+        }
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+
+            if (message && ws && ws.readyState === WebSocket.OPEN) {
+                // Send text frame
+                // Browser automatically:
+                // - Frames the message
+                // - Applies masking
+                // - Sends over TCP
+                ws.send(message);
+                log('> ' + message, 'sent');
+                input.value = '';
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        function log(message, type) {
+            const messages = document.getElementById('messages');
+            const div = document.createElement('div');
+            div.className = type;
+            div.textContent = message;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+        function updateStatus(connected) {
+            const status = document.getElementById('status');
+            const connectBtn = document.getElementById('connectBtn');
+            const disconnectBtn = document.getElementById('disconnectBtn');
+            const sendBtn = document.getElementById('sendBtn');
+            const input = document.getElementById('messageInput');
+
+            if (connected) {
+                status.textContent = 'Connected to ' + serverUrl;
+                status.className = 'connected';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                sendBtn.disabled = false;
+                input.disabled = false;
+                input.focus();
+            } else {
+                status.textContent = 'Disconnected';
+                status.className = 'disconnected';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                sendBtn.disabled = true;
+                input.disabled = true;
+            }
+        }
+    </script>
+</body>
+</html>
