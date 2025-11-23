@@ -27,4 +27,12 @@ golangci-lint run
 
 ## Architecture
 
-New project - no source code yet.
+Go examples organized by topic:
+
+- `ducktyping/` - Interface and duck typing patterns
+- `embedding/` - Struct embedding examples
+- `escape/` - Escape analysis examples
+- `fatpointer/` - Interface internal representation
+- `io/` - File I/O and io.Reader patterns
+- `network/` - Network programming (TCP, UDP, WebSocket, HTTP)
+- `slice/` - Slice internals and behavior
