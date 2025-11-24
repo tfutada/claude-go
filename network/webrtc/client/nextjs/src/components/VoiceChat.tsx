@@ -15,14 +15,57 @@ export default function VoiceChat() {
 
   const logLine = (s: string) => setLog((prev) => [...prev, s]);
 
+  // Increase audio bitrate in SDP for better quality
+  const setAudioBitrate = (sdp: string, bitrate: number): string => {
+    const lines = sdp.split('\r\n');
+    const newLines: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      newLines.push(lines[i]);
+
+      // Find audio media line and add bitrate after
+      if (lines[i].startsWith('m=audio')) {
+        // Find the next line that starts with 'c=' and insert after it
+        for (let j = i + 1; j < lines.length; j++) {
+          if (lines[j].startsWith('c=')) {
+            newLines.push(lines[j]);
+            newLines.push(`b=AS:${bitrate}`);
+            i = j;
+            break;
+          } else if (lines[j].startsWith('m=')) {
+            break;
+          } else {
+            newLines.push(lines[j]);
+            i = j;
+          }
+        }
+      }
+    }
+
+    return newLines.join('\r\n');
+  };
+
   const setup = async () => {
     if (pcRef.current) return;
 
-    // Get microphone access
+    // Get microphone access with high-quality constraints
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+          sampleRate: 48000,
+          channelCount: 1, // mono for voice
+        },
+      });
       localStreamRef.current = stream;
-      logLine('Microphone access granted');
+
+      // Log audio settings
+      const audioTrack = stream.getAudioTracks()[0];
+      const settings = audioTrack.getSettings();
+      logLine(`Mic: ${audioTrack.label}`);
+      logLine(`Sample rate: ${settings.sampleRate}Hz`);
     } catch (err) {
       logLine('Error: Microphone access denied');
       return;
@@ -41,9 +84,14 @@ export default function VoiceChat() {
       if (data.type === 'offer') {
         await pc.setRemoteDescription(data);
         const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        wsRef.current?.send(JSON.stringify(answer));
-        logLine('Received offer, sent answer');
+        // Increase bitrate to 128kbps for better quality
+        const modifiedAnswer = {
+          type: answer.type,
+          sdp: setAudioBitrate(answer.sdp!, 128),
+        };
+        await pc.setLocalDescription(modifiedAnswer);
+        wsRef.current?.send(JSON.stringify(modifiedAnswer));
+        logLine('Received offer, sent answer (128kbps)');
       } else if (data.type === 'answer') {
         await pc.setRemoteDescription(data);
         logLine('Received answer');
@@ -96,9 +144,14 @@ export default function VoiceChat() {
     }
     const pc = pcRef.current;
     const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    wsRef.current?.send(JSON.stringify(offer));
-    logLine('Sent offer');
+    // Increase bitrate to 128kbps for better quality
+    const modifiedOffer = {
+      type: offer.type,
+      sdp: setAudioBitrate(offer.sdp!, 128),
+    };
+    await pc.setLocalDescription(modifiedOffer);
+    wsRef.current?.send(JSON.stringify(modifiedOffer));
+    logLine('Sent offer (128kbps)');
   };
 
   const toggleMute = () => {
