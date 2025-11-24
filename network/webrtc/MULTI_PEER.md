@@ -24,12 +24,6 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-// Client with ID
-type Client struct {
-	ID   string
-	Conn *websocket.Conn
-}
-
 var (
 	clients   = make(map[string]*websocket.Conn) // ID → connection
 	clientsMu sync.RWMutex
@@ -177,6 +171,7 @@ export default function Home() {
   const [myPeerId] = useState(() => Math.random().toString(36).substr(2, 9));
   const [peers, setPeers] = useState<string[]>([]);
   const [connectedPeers, setConnectedPeers] = useState<Set<string>>(new Set());
+  const [callingPeers, setCallingPeers] = useState<Set<string>>(new Set());
 
   const wsRef = useRef<WebSocket | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
@@ -196,13 +191,19 @@ export default function Home() {
 
   const initWebSocket = async () => {
     // Get local media first
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true
-    });
-    localStreamRef.current = stream;
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = stream;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true
+      });
+      localStreamRef.current = stream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error('Failed to get media devices:', err);
+      alert('Camera/microphone access denied');
+      return;
     }
 
     // Connect to signaling server
@@ -219,16 +220,12 @@ export default function Home() {
 
       switch (msg.type) {
         case 'peer-list':
-          // Existing peers when we joined
+          // Existing peers when we joined (no auto-connect)
           setPeers(msg.peers);
-          // Create offers to all existing peers
-          for (const peerId of msg.peers) {
-            await createOffer(peerId);
-          }
           break;
 
         case 'peer-joined':
-          // New peer joined - add to list, they will send us an offer
+          // New peer joined - add to list
           setPeers(prev => [...prev, msg.peerId]);
           break;
 
@@ -236,6 +233,11 @@ export default function Home() {
           // Peer left - cleanup
           setPeers(prev => prev.filter(id => id !== msg.peerId));
           setConnectedPeers(prev => {
+            const next = new Set(prev);
+            next.delete(msg.peerId);
+            return next;
+          });
+          setCallingPeers(prev => {
             const next = new Set(prev);
             next.delete(msg.peerId);
             return next;
@@ -297,13 +299,28 @@ export default function Home() {
         videoEl.srcObject = stream;
       }
       setConnectedPeers(prev => new Set([...prev, peerId]));
+      setCallingPeers(prev => {
+        const next = new Set(prev);
+        next.delete(peerId);
+        return next;
+      });
     };
 
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === 'connected') {
         setConnectedPeers(prev => new Set([...prev, peerId]));
+        setCallingPeers(prev => {
+          const next = new Set(prev);
+          next.delete(peerId);
+          return next;
+        });
       } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
         setConnectedPeers(prev => {
+          const next = new Set(prev);
+          next.delete(peerId);
+          return next;
+        });
+        setCallingPeers(prev => {
           const next = new Set(prev);
           next.delete(peerId);
           return next;
@@ -315,7 +332,11 @@ export default function Home() {
     return pc;
   };
 
-  const createOffer = async (peerId: string) => {
+  const callPeer = async (peerId: string) => {
+    if (connectedPeers.has(peerId) || callingPeers.has(peerId)) return;
+
+    setCallingPeers(prev => new Set([...prev, peerId]));
+
     const pc = createPeerConnection(peerId);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -328,7 +349,40 @@ export default function Home() {
     }));
   };
 
+  const hangUp = (peerId: string) => {
+    const peerConn = peerConnectionsRef.current.get(peerId);
+    if (peerConn) {
+      peerConn.pc.close();
+      peerConnectionsRef.current.delete(peerId);
+    }
+    setConnectedPeers(prev => {
+      const next = new Set(prev);
+      next.delete(peerId);
+      return next;
+    });
+    setCallingPeers(prev => {
+      const next = new Set(prev);
+      next.delete(peerId);
+      return next;
+    });
+  };
+
   const handleOffer = async (fromPeerId: string, sdp: string) => {
+    // Check if we already have a connection (e.g., we also called them)
+    let peerConn = peerConnectionsRef.current.get(fromPeerId);
+    if (peerConn) {
+      // Already have connection - this is a glare condition
+      // Use peer ID comparison to decide who wins (lower ID is offerer)
+      if (myPeerId < fromPeerId) {
+        // We should be the offerer, ignore their offer
+        return;
+      }
+      // They should be the offerer, close our connection and accept theirs
+      peerConn.pc.close();
+      peerConnectionsRef.current.delete(fromPeerId);
+    }
+
+    // Auto-accept incoming calls
     const pc = createPeerConnection(fromPeerId);
     await pc.setRemoteDescription({ type: 'offer', sdp });
 
@@ -366,21 +420,82 @@ export default function Home() {
         <strong>My ID:</strong> {myPeerId}
       </div>
 
-      {/* Peer List */}
+      {/* Peer List with Call Buttons */}
       <div style={{ marginBottom: '20px' }}>
         <h3>Peers in Room ({peers.length})</h3>
         {peers.length === 0 ? (
           <p>No other peers connected</p>
         ) : (
-          <ul>
-            {peers.map(peerId => (
-              <li key={peerId} style={{
-                color: connectedPeers.has(peerId) ? 'green' : 'orange'
-              }}>
-                {peerId} {connectedPeers.has(peerId) ? '(connected)' : '(connecting...)'}
-              </li>
-            ))}
-          </ul>
+          <table style={{ borderCollapse: 'collapse', width: '100%', maxWidth: '500px' }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #ccc' }}>Peer ID</th>
+                <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #ccc' }}>Status</th>
+                <th style={{ textAlign: 'left', padding: '8px', borderBottom: '1px solid #ccc' }}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {peers.map(peerId => (
+                <tr key={peerId}>
+                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
+                    {peerId}
+                  </td>
+                  <td style={{
+                    padding: '8px',
+                    borderBottom: '1px solid #eee',
+                    color: connectedPeers.has(peerId) ? 'green' : callingPeers.has(peerId) ? 'orange' : 'gray'
+                  }}>
+                    {connectedPeers.has(peerId) ? 'Connected' : callingPeers.has(peerId) ? 'Calling...' : 'Available'}
+                  </td>
+                  <td style={{ padding: '8px', borderBottom: '1px solid #eee' }}>
+                    {connectedPeers.has(peerId) ? (
+                      <button
+                        onClick={() => hangUp(peerId)}
+                        style={{
+                          padding: '4px 12px',
+                          backgroundColor: '#dc3545',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Hang Up
+                      </button>
+                    ) : callingPeers.has(peerId) ? (
+                      <button
+                        onClick={() => hangUp(peerId)}
+                        style={{
+                          padding: '4px 12px',
+                          backgroundColor: '#6c757d',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => callPeer(peerId)}
+                        style={{
+                          padding: '4px 12px',
+                          backgroundColor: '#28a745',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Call
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
@@ -398,13 +513,20 @@ export default function Home() {
           />
         </div>
 
-        {/* Remote videos */}
-        {peers.map(peerId => (
+        {/* Remote videos - only show connected peers */}
+        {Array.from(connectedPeers).map(peerId => (
           <div key={peerId}>
             <p>{peerId}</p>
             <video
               ref={el => {
-                if (el) remoteVideosRef.current.set(peerId, el);
+                if (el) {
+                  remoteVideosRef.current.set(peerId, el);
+                  // Set stream if already available
+                  const peerConn = peerConnectionsRef.current.get(peerId);
+                  if (peerConn?.stream) {
+                    el.srcObject = peerConn.stream;
+                  }
+                }
               }}
               autoPlay
               playsInline
@@ -418,11 +540,11 @@ export default function Home() {
 }
 ```
 
-## Frame Exchange with 3 Peers
+## Frame Exchange with 3 Peers (Manual Call Buttons)
 
 ```
 ═══════════════════════════════════════════════════════════════════
-PHASE 1: Connection
+PHASE 1: All Peers Join Room (No Auto-Connect)
 ═══════════════════════════════════════════════════════════════════
 
 Browser A → Server:
@@ -470,8 +592,64 @@ Server → Browser B:
 │ { "type": "peer-joined", "peerId": "C" }│
 └──────────────────────────────────────┘
 
+UI State at this point:
+┌─────────────────────────────────────────────┐
+│ Browser A sees:                             │
+│ ┌─────────┬───────────┬─────────┐           │
+│ │ Peer ID │ Status    │ Action  │           │
+│ ├─────────┼───────────┼─────────┤           │
+│ │ B       │ Available │ [Call]  │           │
+│ │ C       │ Available │ [Call]  │           │
+│ └─────────┴───────────┴─────────┘           │
+└─────────────────────────────────────────────┘
+
 ═══════════════════════════════════════════════════════════════════
-PHASE 2: C creates offers to existing peers (A and B)
+PHASE 2: A clicks "Call" on B (Manual Action)
+═══════════════════════════════════════════════════════════════════
+
+Browser A → Server:
+┌──────────────────────────────────────┐
+│ { "type": "offer",                   │
+│   "from": "A", "to": "B",            │
+│   "sdp": "..." }                     │
+└──────────────────────────────────────┘
+
+Server → Browser B (targeted):
+┌──────────────────────────────────────┐
+│ { "type": "offer",                   │
+│   "from": "A", "to": "B",            │
+│   "sdp": "..." }                     │
+└──────────────────────────────────────┘
+
+Browser B auto-accepts and sends answer:
+┌──────────────────────────────────────┐
+│ { "type": "answer",                  │
+│   "from": "B", "to": "A",            │
+│   "sdp": "..." }                     │
+└──────────────────────────────────────┘
+
+Server → Browser A (targeted):
+┌──────────────────────────────────────┐
+│ { "type": "answer",                  │
+│   "from": "B", "to": "A",            │
+│   "sdp": "..." }                     │
+└──────────────────────────────────────┘
+
+ICE candidates exchanged...
+
+UI State after A-B connected:
+┌─────────────────────────────────────────────┐
+│ Browser A sees:                             │
+│ ┌─────────┬───────────┬───────────┐         │
+│ │ Peer ID │ Status    │ Action    │         │
+│ ├─────────┼───────────┼───────────┤         │
+│ │ B       │ Connected │ [Hang Up] │         │
+│ │ C       │ Available │ [Call]    │         │
+│ └─────────┴───────────┴───────────┘         │
+└─────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════
+PHASE 3: C clicks "Call" on A (Manual Action)
 ═══════════════════════════════════════════════════════════════════
 
 Browser C → Server:
@@ -488,6 +666,19 @@ Server → Browser A (targeted):
 │   "sdp": "..." }                     │
 └──────────────────────────────────────┘
 
+Browser A auto-accepts and sends answer:
+┌──────────────────────────────────────┐
+│ { "type": "answer",                  │
+│   "from": "A", "to": "C",            │
+│   "sdp": "..." }                     │
+└──────────────────────────────────────┘
+
+ICE candidates exchanged...
+
+═══════════════════════════════════════════════════════════════════
+PHASE 4: C clicks "Call" on B (Manual Action)
+═══════════════════════════════════════════════════════════════════
+
 Browser C → Server:
 ┌──────────────────────────────────────┐
 │ { "type": "offer",                   │
@@ -495,67 +686,10 @@ Browser C → Server:
 │   "sdp": "..." }                     │
 └──────────────────────────────────────┘
 
-Server → Browser B (targeted):
-┌──────────────────────────────────────┐
-│ { "type": "offer",                   │
-│   "from": "C", "to": "B",            │
-│   "sdp": "..." }                     │
-└──────────────────────────────────────┘
+... same flow as above ...
 
 ═══════════════════════════════════════════════════════════════════
-PHASE 3: A and B send answers to C
-═══════════════════════════════════════════════════════════════════
-
-Browser A → Server:
-┌──────────────────────────────────────┐
-│ { "type": "answer",                  │
-│   "from": "A", "to": "C",            │
-│   "sdp": "..." }                     │
-└──────────────────────────────────────┘
-
-Server → Browser C (targeted):
-┌──────────────────────────────────────┐
-│ { "type": "answer",                  │
-│   "from": "A", "to": "C",            │
-│   "sdp": "..." }                     │
-└──────────────────────────────────────┘
-
-Browser B → Server:
-┌──────────────────────────────────────┐
-│ { "type": "answer",                  │
-│   "from": "B", "to": "C",            │
-│   "sdp": "..." }                     │
-└──────────────────────────────────────┘
-
-Server → Browser C (targeted):
-┌──────────────────────────────────────┐
-│ { "type": "answer",                  │
-│   "from": "B", "to": "C",            │
-│   "sdp": "..." }                     │
-└──────────────────────────────────────┘
-
-═══════════════════════════════════════════════════════════════════
-PHASE 4: ICE Candidates (targeted to each peer)
-═══════════════════════════════════════════════════════════════════
-
-Browser C → Server (for A):
-┌──────────────────────────────────────┐
-│ { "type": "candidate",               │
-│   "from": "C", "to": "A",            │
-│   "candidate": {...} }               │
-└──────────────────────────────────────┘
-
-Browser C → Server (for B):
-┌──────────────────────────────────────┐
-│ { "type": "candidate",               │
-│   "from": "C", "to": "B",            │
-│   "candidate": {...} }               │
-└──────────────────────────────────────┘
-
-... (each peer sends candidates to each other peer) ...
-
-═══════════════════════════════════════════════════════════════════
-PHASE 5: Mesh Established
+PHASE 5: Full Mesh (Each Peer Connected Individually)
 ═══════════════════════════════════════════════════════════════════
 
     A ════════════ B
@@ -565,7 +699,18 @@ PHASE 5: Mesh Established
         ╲     ╱
            C
 
-3 P2P connections: A-B (existing), A-C, B-C
+Final UI State on Browser C:
+┌─────────────────────────────────────────────┐
+│ Browser C sees:                             │
+│ ┌─────────┬───────────┬───────────┐         │
+│ │ Peer ID │ Status    │ Action    │         │
+│ ├─────────┼───────────┼───────────┤         │
+│ │ A       │ Connected │ [Hang Up] │         │
+│ │ B       │ Connected │ [Hang Up] │         │
+│ └─────────┴───────────┴───────────┘         │
+│                                             │
+│ Videos: [Me] [A] [B]                        │
+└─────────────────────────────────────────────┘
 ```
 
 ## Key Differences from Current Implementation
@@ -580,8 +725,10 @@ PHASE 5: Mesh Established
 
 ## Notes
 
-- New peer sends offers to ALL existing peers
-- Existing peers wait for offers from new peer
-- Each peer maintains N-1 `RTCPeerConnection` objects
+- Peers see list of available peers with Call/Hang Up buttons
+- Click "Call" to initiate connection to specific peer
+- Incoming offers are auto-accepted (no reject UI)
+- Each peer can have multiple independent P2P connections
 - Server only routes messages, doesn't modify them
+- Videos only appear for connected peers
 - Clean disconnect sends `peer-left` to all
