@@ -1,3 +1,5 @@
+//go:build ignore
+
 // TCP Binary Client Example
 // Connects to binary_server.go using length-prefixed protocol
 //

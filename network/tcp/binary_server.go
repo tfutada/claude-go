@@ -1,3 +1,5 @@
+//go:build ignore
+
 // TCP Binary Server Example
 // Demonstrates length-prefixed binary protocol
 //
