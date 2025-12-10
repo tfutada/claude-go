@@ -35,3 +35,4 @@ Thumbs.db
 
 # Debug
 __debug_bin*
+/data.bin
