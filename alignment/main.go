@@ -7,26 +7,29 @@ import (
 
 // Bad: fields ordered poorly - wastes memory due to padding
 type BadOrder struct {
-	a bool  // 1 byte + 7 bytes padding (to align b)
+	a bool // 1 byte
+	// 7 bytes padding to align next field
 	b int64 // 8 bytes
-	c bool  // 1 byte + 7 bytes padding (to align next struct)
+	c bool  // 1 byte
+	// 7 bytes padding (to align next struct)
 }
 
 // Good: fields ordered by size (largest first) - minimal padding
 type GoodOrder struct {
 	b int64 // 8 bytes
 	a bool  // 1 byte
-	c bool  // 1 byte + 6 bytes padding
+	c bool  // 1 byte
+	// 6 bytes padding
 }
 
 // Real-world example: User struct
 type UserBad struct {
-	Active    bool      // 1 + 7 padding
-	ID        int64     // 8
-	Verified  bool      // 1 + 3 padding
-	Age       int32     // 4
-	Name      string    // 16 (string header: ptr + len)
-	Admin     bool      // 1 + 7 padding
+	Active   bool   // 1 + 7 padding
+	ID       int64  // 8
+	Verified bool   // 1 + 3 padding
+	Age      int32  // 4
+	Name     string // 16 (string header: ptr + len)
+	Admin    bool   // 1 + 7 padding
 }
 
 type UserGood struct {
@@ -35,7 +38,8 @@ type UserGood struct {
 	Age      int32  // 4
 	Active   bool   // 1
 	Verified bool   // 1
-	Admin    bool   // 1 + 1 padding
+	Admin    bool   // 1
+	// 1 padding
 }
 
 func main() {
