@@ -38,13 +38,16 @@ func main() {
 
 	numCPU := runtime.NumCPU()
 	goroutineCounts := []int{100, 500, 1000, 2000}
-	procCounts := []int{1, 2, 4}
-	if numCPU >= 8 {
-		procCounts = append(procCounts, 8)
+
+	// Build proc counts: 1, 2, 4, ..., numCPU, numCPU+1
+	var procCounts []int
+	for p := 1; p <= numCPU; p *= 2 {
+		procCounts = append(procCounts, p)
 	}
-	if numCPU >= 16 {
-		procCounts = append(procCounts, 16)
+	if procCounts[len(procCounts)-1] != numCPU {
+		procCounts = append(procCounts, numCPU)
 	}
+	procCounts = append(procCounts, numCPU+1) // CPU cores + 1
 
 	fmt.Printf("CPU Cores: %d, fib(%d)\n\n", numCPU, fibN)
 
