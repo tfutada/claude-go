@@ -30,6 +30,11 @@ func main() {
 	channelDirections()
 	selectDemo()
 	rangeOverChannel()
+
+	// Cancel patterns from cancel.go
+	for _, demo := range cancelDemos {
+		demo()
+	}
 }
 
 // basicChannel shows unbuffered channel synchronization.
