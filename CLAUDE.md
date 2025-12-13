@@ -29,10 +29,13 @@ golangci-lint run
 
 Go examples organized by topic:
 
+- `alignment/` - Struct field alignment and memory padding
+- `asm/` - Assembly output analysis with go:noinline
 - `ducktyping/` - Interface and duck typing patterns
 - `embedding/` - Struct embedding examples
 - `escape/` - Escape analysis examples
 - `fatpointer/` - Interface internal representation
+- `goroutine/` - Goroutine scheduler, GMP model, preemption
 - `io/` - File I/O and io.Reader patterns
 - `network/` - Network programming (TCP, UDP, WebSocket, HTTP)
 - `slice/` - Slice internals and behavior
