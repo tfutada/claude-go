@@ -31,6 +31,7 @@ Go examples organized by topic:
 
 - `alignment/` - Struct field alignment and memory padding
 - `asm/` - Assembly output analysis with go:noinline
+- `channel/` - Channel fundamentals and patterns
 - `ducktyping/` - Interface and duck typing patterns
 - `embedding/` - Struct embedding examples
 - `escape/` - Escape analysis examples
