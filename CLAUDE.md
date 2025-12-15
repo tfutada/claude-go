@@ -40,3 +40,20 @@ Go examples organized by topic:
 - `io/` - File I/O and io.Reader patterns
 - `network/` - Network programming (TCP, UDP, WebSocket, HTTP)
 - `slice/` - Slice internals and behavior
+
+## OpenAI Streaming Example
+
+```bash
+# OpenAI
+export OPENAI_API_KEY=sk-...
+go run ./network/http/openai_stream.go
+
+# Azure OpenAI
+export OPENAI_API_KEY=your-azure-key
+export OPENAI_API_BASE=https://{resource}.openai.azure.com/openai/v1
+go run ./network/http/openai_stream.go
+```
+
+Environment variables:
+- `OPENAI_API_KEY` (required) - API key for OpenAI or Azure
+- `OPENAI_API_BASE` (optional) - Base URL, defaults to `https://api.openai.com/v1`
