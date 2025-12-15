@@ -5,6 +5,12 @@
 //
 // Usage:
 //   export OPENAI_API_KEY=sk-...
+//   export OPENAI_API_BASE=https://api.openai.com/v1  # optional, default
+//   go run ./network/http/openai_stream.go
+//
+// Azure OpenAI:
+//   export OPENAI_API_KEY=your-azure-key
+//   export OPENAI_API_BASE=https://{resource}.openai.azure.com/openai/deployments/{deployment}?api-version=2024-02-15-preview
 //   go run ./network/http/openai_stream.go
 package main
 
@@ -36,6 +42,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	apiBase := os.Getenv("OPENAI_API_BASE")
+	if apiBase == "" {
+		apiBase = "https://api.openai.com/v1"
+	}
+	endpoint := apiBase + "/chat/completions"
+
 	// Build request
 	reqBody := ChatRequest{
 		Model: "gpt-4o-mini",
@@ -47,7 +59,7 @@ func main() {
 
 	jsonBody, _ := json.Marshal(reqBody)
 
-	req, err := http.NewRequest("POST", "https://api.openai.com/v1/chat/completions", bytes.NewReader(jsonBody))
+	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(jsonBody))
 	if err != nil {
 		fmt.Println("Error creating request:", err)
 		os.Exit(1)
@@ -55,6 +67,7 @@ func main() {
 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("api-key", apiKey) // Azure OpenAI uses this header
 
 	// Send request
 	client := &http.Client{}
