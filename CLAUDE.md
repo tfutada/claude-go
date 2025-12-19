@@ -41,6 +41,19 @@ Go examples organized by topic:
 - `network/` - Network programming (TCP, UDP, WebSocket, HTTP)
 - `slice/` - Slice internals and behavior
 
+## TCP Server/Client Example
+
+```bash
+# Terminal 1: Start server
+go run ./network/tcp/server.go
+
+# Terminal 2: Start client
+go run ./network/tcp/client.go
+```
+
+Server uses `SetReadDeadline` (30s) to prevent hanging on incomplete messages.
+Client intentionally omits `\n` to demonstrate timeout behavior.
+
 ## OpenAI Streaming Example
 
 ```bash
