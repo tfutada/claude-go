@@ -45,7 +45,9 @@ func main() {
 
 		// Send message to server
 		// TCP ensures this data arrives in order and intact
-		_, err = conn.Write([]byte(input + "\n"))
+		// Intentionally omit \n to demonstrate server timeout
+		//_, err = conn.Write([]byte(input + "\n"))
+		_, err = conn.Write([]byte(input))
 		if err != nil {
 			fmt.Printf("Send error: %v\n", err)
 			return
